@@ -1,0 +1,94 @@
+---
+import AppLayout from '../layouts/AppLayout.astro';
+---
+<AppLayout title="Éditeur de skills" section="skills">
+  <div class="editor-page" id="skills-app">
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <p class="eyebrow">Workspace</p>
+        <h1>Skills</h1>
+        <p class="sidebar-subtitle">Agent Skills portables avec `SKILL.md`, scripts et ressources associées.</p>
+      </div>
+      <div class="doc-list" id="skill-list"></div>
+      <div class="sidebar-actions"><button class="btn primary block" id="new-skill">＋ Nouveau skill</button></div>
+    </aside>
+
+    <section class="editor-column">
+      <div class="column-head">
+        <div><h2 id="editor-title">Skill</h2><p id="save-status">Sauvegarde locale automatique</p></div>
+        <div class="actions-row"><button class="btn danger ghost" id="delete-skill">Supprimer</button></div>
+      </div>
+      <div class="editor-content">
+        <div class="section-card">
+          <div class="section-title"><div><h3>Identité du skill</h3><p>Le nom est aussi le nom exact du dossier exporté.</p></div><span class="badge required">Spec</span></div>
+          <div class="field">
+            <label for="skill-name">Nom <span class="badge required">requis</span></label>
+            <div class="prefix-input"><span>skills/</span><input id="skill-name" autocomplete="off" placeholder="pdf-processing" /><span class="suffix">/SKILL.md</span></div>
+            <div class="field-help">1–64 caractères · minuscules, chiffres et tirets uniquement · pas de `--`.</div>
+          </div>
+          <div class="field"><label for="skill-description">Description <span class="badge required">requise</span></label><textarea class="textarea tall" id="skill-description" maxlength="1024" placeholder="Décrivez ce que fait le skill ET quand l’agent doit l’utiliser. Incluez les mots-clés qui permettent de le découvrir."></textarea><div class="field-help"><span id="skill-description-count">0</span> / 1 024 caractères · cette métadonnée est chargée avant l’activation du skill.</div></div>
+        </div>
+
+        <div class="section-card">
+          <div class="section-title"><div><h3>Métadonnées optionnelles</h3><p>Déclarez uniquement ce qui est utile au runtime ou au consommateur du skill.</p></div><span class="badge spec">Frontmatter</span></div>
+          <div class="grid-2">
+            <div class="field"><label for="skill-license">Licence</label><input class="input" id="skill-license" placeholder="Apache-2.0 ou LICENSE.txt" /></div>
+            <div class="field"><label for="skill-allowed-tools">Allowed tools <span class="badge">expérimental</span></label><input class="input" id="skill-allowed-tools" placeholder="Bash(git:*) Read" /></div>
+          </div>
+          <div class="field"><label for="skill-compatibility">Compatibilité</label><textarea class="textarea" id="skill-compatibility" maxlength="500" placeholder="Ex. Requires Python 3.14+ and uv"></textarea><div class="field-help"><span id="skill-compatibility-count">0</span> / 500 · à utiliser uniquement si l’environnement impose des prérequis.</div></div>
+          <div class="field">
+            <div class="field-label"><span>Metadata</span><button class="btn" id="add-metadata">＋ Entrée</button></div>
+            <div class="repeater" id="metadata-list"></div>
+          </div>
+        </div>
+
+        <div class="section-card">
+          <div class="section-title"><div><h3>Instructions</h3><p>Le `SKILL.md` doit rester actionnable et concis ; déportez la documentation longue dans `references/`.</p></div><span class="badge required">Guidé</span></div>
+          <div class="field"><label for="skill-overview">Objectif</label><textarea class="textarea" id="skill-overview" placeholder="Résumez l’objectif et le résultat attendu du skill."></textarea></div>
+          <div class="field"><label for="skill-instructions">Instructions <span class="badge required">requises</span></label><textarea class="textarea tall" id="skill-instructions" placeholder="1. Vérifier les prérequis…&#10;2. Lire uniquement les références nécessaires…&#10;3. Exécuter…&#10;4. Vérifier le résultat…"></textarea><div class="field-help">Privilégiez une procédure déterministe avec critères de validation et conditions d’arrêt.</div></div>
+          <div class="field"><label for="skill-examples">Exemples</label><textarea class="textarea tall" id="skill-examples" placeholder="### Entrée&#10;…&#10;&#10;### Sortie attendue&#10;…"></textarea></div>
+          <div class="field"><label for="skill-edge-cases">Cas limites & erreurs</label><textarea class="textarea" id="skill-edge-cases" placeholder="- Si le fichier est absent…&#10;- Si la commande échoue…"></textarea></div>
+          <div class="field"><label for="skill-notes">Markdown additionnel</label><textarea class="textarea" id="skill-notes" placeholder="Notes, variantes ou sections spécifiques au domaine."></textarea></div>
+        </div>
+
+        <div class="section-card">
+          <div class="section-title"><div><h3>Ressources du skill</h3><p>Ajoutez du code exécutable, des références chargées à la demande ou des assets. Les chemins restent relatifs à la racine du skill.</p></div><span class="badge spec">Progressive disclosure</span></div>
+          <div class="file-toolbar">
+            <select class="select" id="file-category"><option value="scripts">scripts/</option><option value="references">references/</option><option value="assets">assets/</option></select>
+            <input class="input" id="new-file-name" placeholder="extract.py, REFERENCE.md, template.json…" />
+            <button class="btn" id="create-file">＋ Fichier texte</button>
+          </div>
+          <div class="actions-row" style="margin-bottom:10px"><button class="btn" id="upload-files">Importer des fichiers</button><input id="file-picker" type="file" multiple hidden /><span class="field-help">Les fichiers texte sont éditables. Les binaires sont conservés tels quels dans l’export.</span></div>
+          <div class="file-list" id="file-list"></div>
+        </div>
+
+        <div class="section-card">
+          <div class="section-title"><div><h3>Utilisé par</h3><p>Agents du workspace qui embarqueront ce skill dans leur bundle.</p></div><a class="btn" href="/agents">Gérer les agents ↗</a></div>
+          <div class="pills" id="used-by"></div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="preview-column">
+      <div class="column-head">
+        <div><h2>Validation & aperçu</h2><p>Contraintes officielles + recommandations de conception.</p></div>
+        <div class="tabbar"><button class="active" data-tab="rendered">Aperçu</button><button data-tab="source">Source</button></div>
+      </div>
+      <div class="preview-content">
+        <div class="validation-summary" id="validation-summary"></div>
+        <div class="validation-list" id="validation-list"></div>
+        <div id="rendered-pane"><div class="render-preview" id="render-preview"></div></div>
+        <div id="source-pane" class="hidden"><div class="code-preview"><div class="code-head"><span>SKILL.md</span><button class="btn ghost" id="copy-source">Copier</button></div><pre id="source-preview"></pre></div></div>
+        <div class="section-card" style="margin-top:14px">
+          <div class="section-title"><div><h3>Export</h3><p>Exportez le fichier seul ou le dossier complet avec ses ressources.</p></div></div>
+          <div class="actions-row" style="flex-wrap:wrap"><button class="btn" id="download-markdown">SKILL.md seul</button><button class="btn primary" id="download-bundle">Télécharger le bundle ZIP</button></div>
+          <div class="field-help" id="export-hint" style="margin-top:9px"></div>
+        </div>
+      </div>
+    </aside>
+  </div>
+  <div class="toast" id="toast"></div>
+  <script>
+    import '../scripts/skills';
+  </script>
+</AppLayout>

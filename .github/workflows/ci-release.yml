@@ -1,0 +1,240 @@
+name: CI & Release
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests & coverage
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --include=dev
+
+      - name: Run tests with V8 coverage
+        run: npm run test:coverage
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-v8
+          path: coverage/
+          if-no-files-found: error
+
+  version-gate:
+    if: github.event_name != 'pull_request'
+    name: Check release version
+    runs-on: ubuntu-22.04
+    needs: test
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+      tag: ${{ steps.package.outputs.tag }}
+      latest_tag: ${{ steps.release.outputs.latest_tag }}
+      should_deploy: ${{ steps.release.outputs.should_deploy }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Read version from package.json
+        id: package
+        shell: bash
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+
+          if [[ -z "$VERSION" ]]; then
+            echo "package.json does not contain a version." >&2
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Package version: $VERSION"
+          echo "Expected release tag: v$VERSION"
+
+      - name: Compare with latest GitHub release
+        id: release
+        uses: actions/github-script@v7
+        env:
+          EXPECTED_TAG: ${{ steps.package.outputs.tag }}
+        with:
+          script: |
+            const expectedTag = process.env.EXPECTED_TAG;
+            let latestTag = '';
+
+            try {
+              const { data } = await github.rest.repos.getLatestRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+              });
+              latestTag = data.tag_name ?? '';
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              core.info('No published GitHub release exists yet.');
+            }
+
+            const shouldDeploy = latestTag !== expectedTag;
+
+            core.info(`Latest release tag: ${latestTag || '(none)'}`);
+            core.info(`package.json release tag: ${expectedTag}`);
+            core.info(shouldDeploy
+              ? 'Version differs: builds and deployment will continue.'
+              : 'Version is already released: pipeline stops after tests.');
+
+            core.setOutput('latest_tag', latestTag);
+            core.setOutput('should_deploy', String(shouldDeploy));
+
+  build-astro:
+    if: needs.version-gate.outputs.should_deploy == 'true' && github.event_name != 'pull_request'
+    name: Build Astro
+    runs-on: ubuntu-22.04
+    needs: version-gate
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --include=dev
+
+      - name: Build static Astro application
+        run: npm run build
+
+      - name: Upload Astro dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: astro-dist
+          path: dist/
+          if-no-files-found: error
+
+  build-tauri:
+    if: needs.version-gate.outputs.should_deploy == 'true' && github.event_name != 'pull_request'
+    name: Tauri ${{ matrix.name }}
+    needs: version-gate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x64
+            platform: ubuntu-22.04
+            bundles: deb,appimage
+            artifact: linux-x86_64-[bundle]
+          - name: Windows x64
+            platform: windows-latest
+            bundles: nsis
+            artifact: windows-x86_64-[bundle]
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install Tauri system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install frontend dependencies
+        run: npm install --include=dev
+
+      - name: Build Tauri bundles
+        uses: tauri-apps/tauri-action@v1
+        with:
+          args: --bundles ${{ matrix.bundles }}
+          uploadWorkflowArtifacts: true
+          workflowArtifactNamePattern: ${{ matrix.artifact }}
+
+  release:
+    if: >-
+      needs.version-gate.outputs.should_deploy == 'true' &&
+      github.event_name == 'push' &&
+      github.ref_name == github.event.repository.default_branch &&
+      github.event_name != 'pull_request'
+    name: Create GitHub release
+    runs-on: ubuntu-22.04
+    needs:
+      - version-gate
+      - build-astro
+      - build-tauri
+    permissions:
+      contents: write
+    steps:
+      - name: Download Tauri artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-x86_64-*'
+          path: release-assets
+          merge-multiple: true
+
+      - name: Verify release assets
+        shell: bash
+        run: |
+          find release-assets -maxdepth 3 -type f -print
+          test -n "$(find release-assets -type f -print -quit)"
+
+      - name: Create version tag and GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.version-gate.outputs.tag }}
+          APP_VERSION: ${{ needs.version-gate.outputs.version }}
+        shell: bash
+        run: |
+          mapfile -d '' files < <(find release-assets -type f -print0)
+
+          gh release create "$RELEASE_TAG" "${files[@]}" \
+            --target "$GITHUB_SHA" \
+            --title "Agent Forge $RELEASE_TAG" \
+            --generate-notes

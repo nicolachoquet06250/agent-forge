@@ -1,0 +1,93 @@
+---
+import AppLayout from '../layouts/AppLayout.astro';
+---
+<AppLayout title="Éditeur d’agents" section="agents">
+  <div class="editor-page" id="agents-app">
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <p class="eyebrow">Workspace</p>
+        <h1>Agents</h1>
+        <p class="sidebar-subtitle">Profils `.agent.md` avec validation continue et références aux skills.</p>
+      </div>
+      <div class="doc-list" id="agent-list"></div>
+      <div class="sidebar-actions"><button class="btn primary block" id="new-agent">＋ Nouvel agent</button></div>
+    </aside>
+
+    <section class="editor-column">
+      <div class="column-head">
+        <div><h2 id="editor-title">Agent</h2><p id="save-status">Sauvegarde locale automatique</p></div>
+        <div class="actions-row"><button class="btn danger ghost" id="delete-agent">Supprimer</button></div>
+      </div>
+      <div class="editor-content">
+        <div class="section-card">
+          <div class="section-title"><div><h3>Identité & découverte</h3><p>Métadonnées utilisées pour identifier et sélectionner l’agent.</p></div><span class="badge required">Structure</span></div>
+          <div class="field">
+            <label for="agent-file">Nom de fichier <span class="badge required">requis</span></label>
+            <div class="prefix-input"><span>agents/</span><input id="agent-file" autocomplete="off" /><span class="suffix">.agent.md</span></div>
+            <div class="field-help">Caractères autorisés : lettres, chiffres, point, tiret et underscore.</div>
+          </div>
+          <div class="grid-2">
+            <div class="field"><label for="agent-name">Nom d’affichage</label><input class="input" id="agent-name" placeholder="Security Reviewer" /></div>
+            <div class="field"><label for="agent-target">Cible</label><select class="select" id="agent-target"><option value="">VS Code + GitHub Copilot</option><option value="vscode">VS Code</option><option value="github-copilot">GitHub Copilot</option></select></div>
+          </div>
+          <div class="field"><label for="agent-description">Description <span class="badge required">requise</span></label><textarea class="textarea" id="agent-description" maxlength="2000" placeholder="Expliquez le rôle de l’agent, son expertise et les tâches auxquelles il est destiné."></textarea><div class="field-help"><span id="agent-description-count">0</span> caractères · une description précise améliore la sélection de l’agent.</div></div>
+          <div class="field"><label for="agent-argument">Argument hint</label><input class="input" id="agent-argument" placeholder="Ex. Décris la feature à analyser…" /><div class="field-help">Affiché dans l’IDE pour guider la saisie utilisateur. Non pris en charge par l’agent cloud GitHub.</div></div>
+        </div>
+
+        <div class="section-card">
+          <div class="section-title"><div><h3>Capacités</h3><p>Limitez le contexte et les actions au strict nécessaire.</p></div><span class="badge spec">Frontmatter</span></div>
+          <div class="field"><label for="agent-model">Modèle</label><input class="input" id="agent-model" placeholder="Ex. GPT-5.2 (copilot) — facultatif" /></div>
+          <div class="field">
+            <div class="field-label"><span>Outils autorisés</span><span class="badge">moindre privilège</span></div>
+            <div class="inline-add"><input class="input" id="tool-input" placeholder="search/codebase, edit, server/*…" /><button class="btn" id="add-tool">Ajouter</button></div>
+            <div class="pills" id="tool-list" style="margin-top:8px"></div>
+          </div>
+          <div class="toggle-row"><div><strong>Invocable par l’utilisateur</strong><small>Affiche l’agent dans le sélecteur.</small></div><label class="switch"><input type="checkbox" id="user-invocable" /><span></span></label></div>
+          <div class="toggle-row"><div><strong>Désactiver l’invocation par le modèle</strong><small>Empêche l’utilisation automatique comme sous-agent.</small></div><label class="switch"><input type="checkbox" id="disable-model" /><span></span></label></div>
+        </div>
+
+        <div class="section-card">
+          <div class="section-title"><div><h3>Instructions de l’agent</h3><p>Structure imposée pour expliciter le rôle, le processus et les critères de réussite.</p></div><span class="badge required">Guidé</span></div>
+          <div class="field"><label for="agent-mission">Mission <span class="badge required">requise</span></label><textarea class="textarea" id="agent-mission" placeholder="Tu es… Ton objectif est… Ton périmètre couvre…"></textarea></div>
+          <div class="field"><label for="agent-responsibilities">Responsabilités</label><textarea class="textarea" id="agent-responsibilities" placeholder="- Analyser…&#10;- Vérifier…&#10;- Documenter…"></textarea></div>
+          <div class="field"><label for="agent-workflow">Workflow <span class="badge required">requis</span></label><textarea class="textarea tall" id="agent-workflow" placeholder="1. Collecter le contexte…&#10;2. Vérifier…&#10;3. Exécuter…&#10;4. Valider le résultat…"></textarea></div>
+          <div class="field"><label for="agent-constraints">Contraintes et garde-fous</label><textarea class="textarea" id="agent-constraints" placeholder="- Ne jamais…&#10;- Demander confirmation si…&#10;- Préférer…"></textarea></div>
+          <div class="field"><label for="agent-output">Contrat de sortie</label><textarea class="textarea" id="agent-output" placeholder="Définissez le format, les preuves de validation et les critères de fin."></textarea></div>
+          <div class="field"><label for="agent-extra">Instructions Markdown additionnelles</label><textarea class="textarea tall" id="agent-extra" placeholder="Sections libres, exemples, conventions spécifiques au projet…"></textarea><div class="field-help">Markdown autorisé. Le preview à droite est mis à jour en direct.</div></div>
+        </div>
+
+        <div class="section-card">
+          <div class="section-title"><div><h3>Skills associés</h3><p>Les skills sélectionnés seront liés dans le Markdown et inclus avec leurs fichiers lors de l’export bundle.</p></div><a class="btn" href="/skills">Gérer les skills ↗</a></div>
+          <div class="check-grid" id="skills-grid"></div>
+        </div>
+
+        <div class="section-card">
+          <div class="section-title"><div><h3>Handoffs</h3><p>Transitions guidées vers d’autres agents. Fonctionnalité VS Code.</p></div><button class="btn" id="add-handoff">＋ Handoff</button></div>
+          <div class="repeater" id="handoff-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="preview-column">
+      <div class="column-head">
+        <div><h2>Validation & aperçu</h2><p>Export bloqué tant qu’une erreur de conformité subsiste.</p></div>
+        <div class="tabbar"><button class="active" data-tab="rendered">Aperçu</button><button data-tab="source">Source</button></div>
+      </div>
+      <div class="preview-content">
+        <div class="validation-summary" id="validation-summary"></div>
+        <div class="validation-list" id="validation-list"></div>
+        <div id="rendered-pane"><div class="render-preview" id="render-preview"></div></div>
+        <div id="source-pane" class="hidden"><div class="code-preview"><div class="code-head"><span id="source-filename">agent.agent.md</span><button class="btn ghost" id="copy-source">Copier</button></div><pre id="source-preview"></pre></div></div>
+        <div class="section-card" style="margin-top:14px">
+          <div class="section-title"><div><h3>Export</h3><p>Le bundle reproduit exactement l’arborescence `agents/` + `skills/`.</p></div></div>
+          <div class="actions-row" style="flex-wrap:wrap"><button class="btn" id="download-markdown">Markdown seul</button><button class="btn primary" id="download-bundle">Télécharger le bundle ZIP</button></div>
+          <div class="field-help" id="export-hint" style="margin-top:9px"></div>
+        </div>
+      </div>
+    </aside>
+  </div>
+  <div class="toast" id="toast"></div>
+  <script>
+    import '../scripts/agents';
+  </script>
+</AppLayout>

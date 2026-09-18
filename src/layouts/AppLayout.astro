@@ -1,0 +1,32 @@
+---
+import '../styles/global.css';
+interface Props {
+  title: string;
+  section: 'agents' | 'skills' | 'home';
+}
+const { title, section } = Astro.props;
+---
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="description" content="Éditeur local de profils d’agents IA et de skills Markdown conformes aux conventions actuelles." />
+    <link rel="icon" href="/favicon.svg" />
+    <title>{title} · Agent Forge</title>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Agent Forge – Accueil">
+        <span class="brand-mark">AF</span>
+        <span><strong>Agent Forge</strong><small>Agents & Skills Markdown</small></span>
+      </a>
+      <nav class="topnav" aria-label="Navigation principale">
+        <a class:list={[section === 'agents' && 'active']} href="/agents">Agents</a>
+        <a class:list={[section === 'skills' && 'active']} href="/skills">Skills</a>
+      </nav>
+      <div class="privacy-chip" title="Aucune donnée n’est envoyée à un serveur"><span></span> Local uniquement</div>
+    </header>
+    <main><slot /></main>
+  </body>
+</html>

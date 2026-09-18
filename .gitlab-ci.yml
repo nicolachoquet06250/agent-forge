@@ -1,0 +1,64 @@
+stages:
+  - test
+  - gate
+  - deploy
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - when: never
+
+variables:
+  NPM_CONFIG_CACHE: "$CI_PROJECT_DIR/.npm"
+
+.node-cache:
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - .npm/
+    policy: pull-push
+
+unit_tests:
+  stage: test
+  image: node:22-bookworm
+  extends: .node-cache
+  script:
+    - npm install --include=dev
+    - npm run test:coverage
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - coverage/
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage/cobertura-coverage.xml
+  coverage: '/All files\s+\|\s+([\d.]+)/'
+
+generate_deploy_pipeline:
+  stage: gate
+  image: node:22-bookworm
+  needs:
+    - job: unit_tests
+      artifacts: false
+  script:
+    - node .gitlab/generate-deploy-pipeline.mjs
+  artifacts:
+    expire_in: 1 day
+    paths:
+      - deploy-child.yml
+
+run_deploy_pipeline:
+  stage: deploy
+  needs:
+    - job: generate_deploy_pipeline
+      artifacts: true
+  trigger:
+    include:
+      - artifact: deploy-child.yml
+        job: generate_deploy_pipeline
+    strategy: depend

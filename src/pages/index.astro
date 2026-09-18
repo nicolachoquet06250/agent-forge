@@ -1,0 +1,26 @@
+---
+import AppLayout from '../layouts/AppLayout.astro';
+---
+<AppLayout title="Éditeur d’agents et de skills IA" section="home">
+  <section class="home">
+    <div class="hero">
+      <div class="hero-kicker">Markdown authoring studio</div>
+      <h1>Des agents et skills propres, structurés et exportables.</h1>
+      <p>Construisez vos profils d’agents et Agent Skills avec validation continue des conventions, prévisualisation Markdown, références croisées et export prêt à déposer dans un dépôt.</p>
+      <div class="home-cards">
+        <a class="home-card" href="/agents">
+          <div class="big-icon">A</div>
+          <h2>Éditeur d’agents</h2>
+          <p>Frontmatter `.agent.md`, outils, modèles, handoffs, garde-fous, contrat de sortie et association aux skills du projet.</p>
+          <div class="linkline">Créer ou modifier un agent →</div>
+        </a>
+        <a class="home-card" href="/skills">
+          <div class="big-icon">S</div>
+          <h2>Éditeur de skills</h2>
+          <p>Spec `SKILL.md`, divulgation progressive, scripts, références, assets, métadonnées et contrôle strict des noms.</p>
+          <div class="linkline">Créer ou modifier un skill →</div>
+        </a>
+      </div>
+    </div>
+  </section>
+</AppLayout>
