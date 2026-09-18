@@ -124,24 +124,33 @@ create_release:
     GLAB_ENABLE_CI_AUTOLOGIN: "true"
   script:
     - |
-      set -euo pipefail
+      set -eu
 
-      APP_VERSION="$(node -p 'require("./package.json").version')"
+      APP_VERSION="$(
+        sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' package.json \
+          | head -n 1
+      )"
+
+      if [ -z "$APP_VERSION" ]; then
+        echo "Unable to read version from package.json."
+        exit 1
+      fi
+
       RELEASE_TAG="v${APP_VERSION}"
 
       echo "Creating GitLab release ${RELEASE_TAG}"
+      echo "Application version: ${APP_VERSION}"
+
       ls -lah release-linux release-windows
 
-      mapfile -d '' release_files < <(
-        find release-linux release-windows -maxdepth 1 -type f -print0
-      )
-
-      if [ "${#release_files[@]}" -eq 0 ]; then
+      if ! find release-linux release-windows -maxdepth 1 -type f -print -quit | grep -q .; then
         echo "No release artifacts found."
         exit 1
       fi
 
-      glab release create "$RELEASE_TAG" "${release_files[@]}" \
+      glab release create "$RELEASE_TAG" \
+        release-linux/* \
+        release-windows/* \
         --name "Agent Forge $RELEASE_TAG" \
         --notes "Automated Agent Forge $APP_VERSION release. Linux and Windows binaries are attached to this release." \
         --ref "$CI_COMMIT_SHA" \
