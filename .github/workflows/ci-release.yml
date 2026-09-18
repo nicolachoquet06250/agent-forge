@@ -3,7 +3,7 @@ name: CI & Release
 on:
   push:
     branches:
-      - main
+      - '**'
   pull_request:
 
 permissions:
@@ -41,7 +41,6 @@ jobs:
           if-no-files-found: error
 
   version-gate:
-    if: github.event_name != 'pull_request'
     name: Check release version
     runs-on: ubuntu-22.04
     needs: test
@@ -108,10 +107,10 @@ jobs:
             core.setOutput('should_deploy', String(shouldDeploy));
 
   build-astro:
-    if: needs.version-gate.outputs.should_deploy == 'true' && github.event_name != 'pull_request'
     name: Build Astro
     runs-on: ubuntu-22.04
     needs: version-gate
+    if: needs.version-gate.outputs.should_deploy == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -136,9 +135,9 @@ jobs:
           if-no-files-found: error
 
   build-tauri:
-    if: needs.version-gate.outputs.should_deploy == 'true' && github.event_name != 'pull_request'
     name: Tauri ${{ matrix.name }}
     needs: version-gate
+    if: needs.version-gate.outputs.should_deploy == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -198,12 +197,11 @@ jobs:
           workflowArtifactNamePattern: ${{ matrix.artifact }}
 
   release:
+    name: Create GitHub release
     if: >-
       needs.version-gate.outputs.should_deploy == 'true' &&
       github.event_name == 'push' &&
-      github.ref_name == github.event.repository.default_branch &&
-      github.event_name != 'pull_request'
-    name: Create GitHub release
+      github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-22.04
     needs:
       - version-gate
@@ -212,6 +210,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download Tauri artifacts
         uses: actions/download-artifact@v4
         with:
@@ -225,17 +226,21 @@ jobs:
           find release-assets -maxdepth 3 -type f -print
           test -n "$(find release-assets -type f -print -quit)"
 
-      - name: Create GitHub release
+      - name: Create version tag and GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ needs.check_version.outputs.release_tag }}
-          APP_VERSION: ${{ needs.check_version.outputs.app_version }}
         shell: bash
         run: |
+          APP_VERSION="$(node -p "require('./package.json').version")"
+          RELEASE_TAG="v${APP_VERSION}"
+
+          echo "APP_VERSION=$APP_VERSION"
+          echo "RELEASE_TAG=$RELEASE_TAG"
+
           mapfile -d '' files < <(find release-assets -type f -print0)
 
           if [ "${#files[@]}" -eq 0 ]; then
-            echo "No release assets found"
+            echo "No release assets found" >&2
             exit 1
           fi
 

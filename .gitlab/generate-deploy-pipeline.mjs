@@ -141,10 +141,10 @@ build_tauri_windows:
       npm --version
   script:
     - npm install --include=dev
-    - npm run tauri:build -- --bundles nsis
-    - New-Item -ItemType Directory -Force release-windows | Out-Null
-    - Get-ChildItem -Path src-tauri\\target\\release\\bundle\\nsis -Filter *.exe | Copy-Item -Destination release-windows
-    - if ((Get-ChildItem release-windows -File).Count -eq 0) { throw "No Windows release artifact was produced." }
+    - npm run tauri:build -- --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis
+    - mkdir -p release-windows
+    - cp src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe release-windows/
+    - test -n "$(find release-windows -maxdepth 1 -type f -print -quit)"
   artifacts:
     expire_in: 7 days
     paths:
