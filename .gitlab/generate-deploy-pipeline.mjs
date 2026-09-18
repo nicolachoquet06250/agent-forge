@@ -116,8 +116,6 @@ build_tauri_linux:
 
 build_tauri_windows:
   stage: package
-  tags:
-    - windows
   cache:
     key:
       files:
