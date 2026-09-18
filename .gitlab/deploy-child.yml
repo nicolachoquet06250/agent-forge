@@ -1,0 +1,148 @@
+stages:
+  - build
+  - package
+  - release
+
+variables:
+  NPM_CONFIG_CACHE: "$CI_PROJECT_DIR/.npm"
+
+.node-cache:
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - .npm/
+    policy: pull-push
+
+build_astro:
+  stage: build
+  image: node:22-bookworm
+  extends: .node-cache
+  script:
+    - npm install --include=dev
+    - npm run build
+  artifacts:
+    expire_in: 7 days
+    paths:
+      - dist/
+
+build_tauri_linux:
+  stage: package
+  image: node:22-bookworm
+  extends: .node-cache
+  before_script:
+    - apt-get update
+    - >-
+      apt-get install -y
+      libwebkit2gtk-4.1-dev
+      build-essential
+      curl
+      wget
+      file
+      libxdo-dev
+      libssl-dev
+      libayatana-appindicator3-dev
+      librsvg2-dev
+      patchelf
+    - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+    - export PATH="$HOME/.cargo/bin:$PATH"
+    - rustc --version
+    - cargo --version
+  script:
+    - export PATH="$HOME/.cargo/bin:$PATH"
+    - npm install --include=dev
+    - npm run tauri:build -- --bundles deb,appimage
+    - mkdir -p release-linux
+    - find src-tauri/target/release/bundle -type f -name '*.AppImage' -exec cp '{}' release-linux/ ';'
+    - find src-tauri/target/release/bundle -type f -name '*.deb' -exec cp '{}' release-linux/ ';'
+    - test -n "$(find release-linux -maxdepth 1 -type f -print -quit)"
+  artifacts:
+    expire_in: 7 days
+    paths:
+      - release-linux/
+
+build_tauri_windows:
+  stage: package
+  image: node:22-bookworm
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - .npm/
+      - .xwin-cache/
+    policy: pull-push
+  variables:
+    XWIN_CACHE_DIR: "$CI_PROJECT_DIR/.xwin-cache"
+  before_script:
+    - apt-get update
+    - >-
+      apt-get install -y
+      build-essential
+      clang
+      curl
+      file
+      lld
+      llvm
+      nsis
+      pkg-config
+      libssl-dev
+    - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+    - export PATH="$HOME/.cargo/bin:$PATH"
+    - rustup target add x86_64-pc-windows-msvc
+    - cargo install --locked cargo-xwin
+    - rustc --version
+    - cargo --version
+    - cargo xwin --version
+    - makensis -VERSION
+  script:
+    - export PATH="$HOME/.cargo/bin:$PATH"
+    - npm install --include=dev
+    - npm run tauri:build -- --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis
+    - mkdir -p release-windows
+    - find src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis -type f -name '*.exe' -exec cp '{}' release-windows/ ';'
+    - test -n "$(find release-windows -maxdepth 1 -type f -name '*.exe' -print -quit)"
+  artifacts:
+    expire_in: 7 days
+    paths:
+      - release-windows/
+
+create_release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/cli:latest
+  needs:
+    - job: build_astro
+      artifacts: false
+    - job: build_tauri_linux
+      artifacts: true
+    - job: build_tauri_windows
+      artifacts: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  variables:
+    GLAB_ENABLE_CI_AUTOLOGIN: "true"
+  script:
+    - |
+      set -euo pipefail
+
+      APP_VERSION="$(node -p 'require("./package.json").version')"
+      RELEASE_TAG="v${APP_VERSION}"
+
+      echo "Creating GitLab release ${RELEASE_TAG}"
+      ls -lah release-linux release-windows
+
+      mapfile -d '' release_files < <(
+        find release-linux release-windows -maxdepth 1 -type f -print0
+      )
+
+      if [ "${#release_files[@]}" -eq 0 ]; then
+        echo "No release artifacts found."
+        exit 1
+      fi
+
+      glab release create "$RELEASE_TAG" "${release_files[@]}" \
+        --name "Agent Forge $RELEASE_TAG" \
+        --notes "Automated Agent Forge $APP_VERSION release. Linux and Windows binaries are attached to this release." \
+        --ref "$CI_COMMIT_SHA" \
+        --use-package-registry

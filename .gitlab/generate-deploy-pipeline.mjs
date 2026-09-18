@@ -8,10 +8,23 @@ if (!version) {
 }
 
 const expectedTag = `v${version}`;
-const endpoint = `${process.env.CI_API_V4_URL}/projects/${process.env.CI_PROJECT_ID}/releases/permalink/latest`;
+
+const apiUrl = process.env.CI_API_V4_URL;
+const projectId = process.env.CI_PROJECT_ID;
+const jobToken = process.env.CI_JOB_TOKEN;
+
+if (!apiUrl || !projectId || !jobToken) {
+  throw new Error(
+    'Missing one of the required GitLab CI variables: CI_API_V4_URL, CI_PROJECT_ID, CI_JOB_TOKEN.',
+  );
+}
+
+const endpoint =
+  `${apiUrl}/projects/${encodeURIComponent(projectId)}/releases/permalink/latest`;
+
 const response = await fetch(endpoint, {
   headers: {
-    'JOB-TOKEN': process.env.CI_JOB_TOKEN,
+    'JOB-TOKEN': jobToken,
   },
 });
 
@@ -28,17 +41,16 @@ if (response.status === 404) {
   latestTag = release.tag_name ?? '';
 }
 
-const shouldDeploy = latestTag !== expectedTag;
-
 console.log(`Latest release tag: ${latestTag || '(none)'}`);
 console.log(`package.json release tag: ${expectedTag}`);
-console.log(
-  shouldDeploy
-    ? 'Version differs: generating build/release child pipeline.'
-    : 'Version is already released: no build or deployment jobs will be generated.',
-);
 
-const skippedPipeline = String.raw`stages:
+const shouldDeploy = latestTag !== expectedTag;
+
+const generatedPipeline = shouldDeploy
+  ? String.raw`include:
+  - local: '/.gitlab/deploy-child.yml'
+`
+  : String.raw`stages:
   - done
 
 version_already_released:
@@ -48,134 +60,10 @@ version_already_released:
     - echo "${expectedTag} is already the latest release; deployment stopped after tests."
 `;
 
-const deployPipeline = String.raw`stages:
-  - build
-  - package
-  - release
-
-variables:
-  NPM_CONFIG_CACHE: "$CI_PROJECT_DIR/.npm"
-  APP_VERSION: "${version}"
-  RELEASE_TAG: "${expectedTag}"
-
-.node-cache:
-  cache:
-    key:
-      files:
-        - package-lock.json
-    paths:
-      - .npm/
-    policy: pull-push
-
-build_astro:
-  stage: build
-  image: node:22-bookworm
-  extends: .node-cache
-  script:
-    - npm install --include=dev
-    - npm run build
-  artifacts:
-    expire_in: 7 days
-    paths:
-      - dist/
-
-build_tauri_linux:
-  stage: package
-  image: node:22-bookworm
-  extends: .node-cache
-  before_script:
-    - apt-get update
-    - >-
-      apt-get install -y
-      libwebkit2gtk-4.1-dev
-      build-essential
-      curl
-      wget
-      file
-      libxdo-dev
-      libssl-dev
-      libayatana-appindicator3-dev
-      librsvg2-dev
-      patchelf
-    - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
-    - export PATH="$HOME/.cargo/bin:$PATH"
-    - rustc --version
-    - cargo --version
-  script:
-    - export PATH="$HOME/.cargo/bin:$PATH"
-    - npm install --include=dev
-    - npm run tauri:build -- --bundles deb,appimage
-    - mkdir -p release-linux
-    - find src-tauri/target/release/bundle -type f -name '*.AppImage' -exec cp {} release-linux/ \;
-    - find src-tauri/target/release/bundle -type f -name '*.deb' -exec cp {} release-linux/ \;
-    - test -n "$(find release-linux -maxdepth 1 -type f -print -quit)"
-  artifacts:
-    expire_in: 7 days
-    paths:
-      - release-linux/
-
-build_tauri_windows:
-  stage: package
-  cache:
-    key:
-      files:
-        - package-lock.json
-    paths:
-      - .npm/
-    policy: pull-push
-  before_script:
-    - |
-      $ErrorActionPreference = "Stop"
-      if (-not (Get-Command rustup -ErrorAction SilentlyContinue)) {
-        Invoke-WebRequest https://win.rustup.rs/x86_64 -OutFile rustup-init.exe
-        .\\rustup-init.exe -y --profile minimal --default-toolchain stable
-        $env:PATH = "$env:USERPROFILE\\.cargo\\bin;$env:PATH"
-      } else {
-        rustup default stable
-      }
-      rustc --version
-      cargo --version
-      node --version
-      npm --version
-  script:
-    - npm install --include=dev
-    - npm run tauri:build -- --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis
-    - mkdir -p release-windows
-    - cp src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe release-windows/
-    - test -n "$(find release-windows -maxdepth 1 -type f -print -quit)"
-  artifacts:
-    expire_in: 7 days
-    paths:
-      - release-windows/
-
-create_release:
-  stage: release
-  image: registry.gitlab.com/gitlab-org/cli:latest
-  needs:
-    - job: build_astro
-      artifacts: false
-    - job: build_tauri_linux
-      artifacts: true
-    - job: build_tauri_windows
-      artifacts: true
-  rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-  variables:
-    GLAB_ENABLE_CI_AUTOLOGIN: "true"
-  script:
-    - ls -lah release-linux release-windows
-    - >-
-      glab release create "$RELEASE_TAG"
-      release-linux/*
-      release-windows/*
-      --name "Agent Forge $RELEASE_TAG"
-      --notes "Automated Agent Forge $APP_VERSION release. Linux and Windows binaries are attached to this release."
-      --ref "$CI_COMMIT_SHA"
-      --use-package-registry
-`;
-
-await writeFile(
-  'deploy-child.yml',
-  shouldDeploy ? deployPipeline : skippedPipeline,
-  'utf8',
+console.log(
+  shouldDeploy
+    ? 'Version differs: deployment child pipeline will be started.'
+    : 'Version is already released: deployment stops after tests.',
 );
+
+await writeFile('deploy-child.yml', generatedPipeline, 'utf8');
