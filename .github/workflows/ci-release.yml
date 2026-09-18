@@ -225,16 +225,22 @@ jobs:
           find release-assets -maxdepth 3 -type f -print
           test -n "$(find release-assets -type f -print -quit)"
 
-      - name: Create version tag and GitHub release
+      - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ needs.version-gate.outputs.tag }}
-          APP_VERSION: ${{ needs.version-gate.outputs.version }}
+          RELEASE_TAG: ${{ needs.check_version.outputs.release_tag }}
+          APP_VERSION: ${{ needs.check_version.outputs.app_version }}
         shell: bash
         run: |
           mapfile -d '' files < <(find release-assets -type f -print0)
 
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No release assets found"
+            exit 1
+          fi
+
           gh release create "$RELEASE_TAG" "${files[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "Agent Forge $RELEASE_TAG" \
             --generate-notes

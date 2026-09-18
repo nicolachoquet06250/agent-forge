@@ -106,7 +106,8 @@ build_tauri_linux:
     - npm install --include=dev
     - npm run tauri:build -- --bundles deb,appimage
     - mkdir -p release-linux
-    - find src-tauri/target/release/bundle -type f \\( -name '*.AppImage' -o -name '*.deb' \\) -exec cp {} release-linux/ \\;
+    - find src-tauri/target/release/bundle -type f -name '*.AppImage' -exec cp {} release-linux/ \;
+    - find src-tauri/target/release/bundle -type f -name '*.deb' -exec cp {} release-linux/ \;
     - test -n "$(find release-linux -maxdepth 1 -type f -print -quit)"
   artifacts:
     expire_in: 7 days
