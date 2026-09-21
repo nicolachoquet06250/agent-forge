@@ -141,6 +141,41 @@ create_release:
       echo "Creating GitLab release ${RELEASE_TAG}"
       echo "Application version: ${APP_VERSION}"
 
+      echo "Release artifacts before filename normalization:"
+      ls -lah release-linux release-windows
+
+      # GitLab Generic Package Registry forbids spaces and other characters
+      # outside: A-Z a-z 0-9 . _ - + ~ @ /
+      for file in release-linux/* release-windows/*; do
+        [ -f "$file" ] || continue
+
+        dir="$(dirname "$file")"
+        name="$(basename "$file")"
+
+        safe_name="$(
+          printf '%s' "$name" |
+            sed -E 's/[^A-Za-z0-9._+~@-]+/-/g; s/^[~@]+/-/; s/[~@]+$/-/'
+        )"
+
+        if [ -z "$safe_name" ]; then
+          echo "Unable to generate a valid GitLab package filename for: $file"
+          exit 1
+        fi
+
+        if [ "$name" != "$safe_name" ]; then
+          destination="$dir/$safe_name"
+
+          if [ -e "$destination" ]; then
+            echo "Cannot normalize '$file': '$destination' already exists."
+            exit 1
+          fi
+
+          echo "Renaming release asset: $name -> $safe_name"
+          mv "$file" "$destination"
+        fi
+      done
+
+      echo "Release artifacts after filename normalization:"
       ls -lah release-linux release-windows
 
       if ! find release-linux release-windows -maxdepth 1 -type f -print -quit | grep -q .; then
