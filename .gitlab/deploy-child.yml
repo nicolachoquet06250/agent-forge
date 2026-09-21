@@ -108,6 +108,78 @@ build_tauri_windows:
     paths:
       - release-windows/
 
+
+build_tauri_windows_standalone:
+  stage: package
+  image: node:22-bookworm
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - .npm/
+      - .xwin-cache/
+    policy: pull-push
+  variables:
+    XWIN_CACHE_DIR: "$CI_PROJECT_DIR/.xwin-cache"
+  before_script:
+    - apt-get update
+    - >-
+      apt-get install -y
+      build-essential
+      clang
+      curl
+      file
+      lld
+      llvm
+      pkg-config
+      libssl-dev
+    - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+    - export PATH="$HOME/.cargo/bin:$PATH"
+    - rustup target add x86_64-pc-windows-msvc
+    - cargo install --locked cargo-xwin
+    - rustc --version
+    - cargo --version
+    - cargo xwin --version
+  script:
+    - export PATH="$HOME/.cargo/bin:$PATH"
+    - npm install --include=dev
+    - npm run tauri:build -- --runner cargo-xwin --target x86_64-pc-windows-msvc --no-bundle
+    - mkdir -p release-windows-standalone
+    - |
+      APP_VERSION="$(
+        sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' package.json \
+          | head -n 1
+      )"
+
+      if [ -z "$APP_VERSION" ]; then
+        echo "Unable to read version from package.json."
+        exit 1
+      fi
+
+      WINDOWS_EXE="$(
+        find src-tauri/target/x86_64-pc-windows-msvc/release \
+          -maxdepth 1 \
+          -type f \
+          -name '*.exe' \
+          -print \
+          -quit
+      )"
+
+      if [ -z "$WINDOWS_EXE" ]; then
+        echo "No standalone Windows executable was produced."
+        exit 1
+      fi
+
+      cp \
+        "$WINDOWS_EXE" \
+        "release-windows-standalone/Agent-Forge_${APP_VERSION}_windows-x64-standalone.exe"
+    - test -n "$(find release-windows-standalone -maxdepth 1 -type f -name '*.exe' -print -quit)"
+  artifacts:
+    expire_in: 7 days
+    paths:
+      - release-windows-standalone/
+
 create_release:
   stage: release
   image: registry.gitlab.com/gitlab-org/cli:latest
@@ -117,6 +189,8 @@ create_release:
     - job: build_tauri_linux
       artifacts: true
     - job: build_tauri_windows
+      artifacts: true
+    - job: build_tauri_windows_standalone
       artifacts: true
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
@@ -142,11 +216,11 @@ create_release:
       echo "Application version: ${APP_VERSION}"
 
       echo "Release artifacts before filename normalization:"
-      ls -lah release-linux release-windows
+      ls -lah release-linux release-windows release-windows-standalone
 
       # GitLab Generic Package Registry forbids spaces and other characters
       # outside: A-Z a-z 0-9 . _ - + ~ @ /
-      for file in release-linux/* release-windows/*; do
+      for file in release-linux/* release-windows/* release-windows-standalone/*; do
         [ -f "$file" ] || continue
 
         dir="$(dirname "$file")"
@@ -176,9 +250,9 @@ create_release:
       done
 
       echo "Release artifacts after filename normalization:"
-      ls -lah release-linux release-windows
+      ls -lah release-linux release-windows release-windows-standalone
 
-      if ! find release-linux release-windows -maxdepth 1 -type f -print -quit | grep -q .; then
+      if ! find release-linux release-windows release-windows-standalone -maxdepth 1 -type f -print -quit | grep -q .; then
         echo "No release artifacts found."
         exit 1
       fi
@@ -186,6 +260,7 @@ create_release:
       glab release create "$RELEASE_TAG" \
         release-linux/* \
         release-windows/* \
+        release-windows-standalone/* \
         --name "Agent Forge $RELEASE_TAG" \
         --notes "Automated Agent Forge $APP_VERSION release. Linux and Windows binaries are attached to this release." \
         --ref "$CI_COMMIT_SHA" \

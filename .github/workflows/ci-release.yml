@@ -196,6 +196,71 @@ jobs:
           uploadWorkflowArtifacts: true
           workflowArtifactNamePattern: ${{ matrix.artifact }}
 
+
+  build-windows-standalone:
+    name: Windows x64 standalone
+    runs-on: windows-latest
+    needs: version-gate
+    if: needs.version-gate.outputs.should_deploy == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install frontend dependencies
+        run: npm install --include=dev
+
+      - name: Build standalone Windows executable
+        shell: pwsh
+        run: |
+          npm run tauri:build -- --no-bundle
+
+          $version = node -p "require('./package.json').version"
+          $outputDir = "release-windows-standalone"
+          New-Item -ItemType Directory -Force $outputDir | Out-Null
+
+          $executables = @(
+            Get-ChildItem `
+              -Path "src-tauri\target\release" `
+              -Filter "*.exe" `
+              -File
+          )
+
+          if ($executables.Count -ne 1) {
+            Write-Host "Top-level Windows executables found:"
+            $executables | ForEach-Object { Write-Host " - $($_.FullName)" }
+            throw "Expected exactly one standalone Tauri executable, found $($executables.Count)."
+          }
+
+          $destination = Join-Path `
+            $outputDir `
+            "Agent-Forge_${version}_windows-x64-standalone.exe"
+
+          Copy-Item $executables[0].FullName $destination
+
+          Write-Host "Standalone executable:"
+          Get-Item $destination | Format-List FullName, Length
+
+      - name: Upload standalone Windows executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x86_64-standalone
+          path: release-windows-standalone/*.exe
+          if-no-files-found: error
+
   release:
     name: Create GitHub release
     if: >-
@@ -207,6 +272,7 @@ jobs:
       - version-gate
       - build-astro
       - build-tauri
+      - build-windows-standalone
     permissions:
       contents: write
     steps:
